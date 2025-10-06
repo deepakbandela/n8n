@@ -2,7 +2,7 @@ import { DateTime } from 'luxon';
 import type {
 	IDataObject,
 	INode,
-	ListDataStoreContentFilter,
+	DataTableFilter,
 	IDataStoreProjectAggregateService,
 	IDataStoreProjectService,
 	IExecuteFunctions,
@@ -13,7 +13,7 @@ import { NodeOperationError } from 'n8n-workflow';
 
 import type { FieldEntry, FilterType } from './constants';
 import { ALL_CONDITIONS, ANY_CONDITION } from './constants';
-import { DATA_TABLE_ID_FIELD } from './fields';
+import { DATA_TABLE_ID_FIELD, DRY_RUN } from './fields';
 
 type DateLike = { toISOString: () => string };
 
@@ -44,7 +44,7 @@ export async function getDataTableProxyExecute(
 
 export async function getDataTableProxyLoadOptions(
 	ctx: ILoadOptionsFunctions,
-): Promise<IDataStoreProjectService> {
+): Promise<IDataStoreProjectService | undefined> {
 	if (ctx.helpers.getDataStoreProxy === undefined)
 		throw new NodeOperationError(
 			ctx.getNode(),
@@ -54,6 +54,10 @@ export async function getDataTableProxyLoadOptions(
 	const dataStoreId = ctx.getNodeParameter(DATA_TABLE_ID_FIELD, undefined, {
 		extractValue: true,
 	}) as string;
+
+	if (!dataStoreId) {
+		return;
+	}
 
 	return await ctx.helpers.getDataStoreProxy(dataStoreId);
 }
@@ -72,7 +76,7 @@ export async function getDataTableAggregateProxy(
 
 export function isFieldEntry(obj: unknown): obj is FieldEntry {
 	if (obj === null || typeof obj !== 'object') return false;
-	return 'keyName' in obj && 'condition' in obj; // keyValue is optional
+	return 'keyName' in obj; // keyValue and condition are optional
 }
 
 export function isMatchType(obj: unknown): obj is FilterType {
@@ -82,7 +86,7 @@ export function isMatchType(obj: unknown): obj is FilterType {
 export function buildGetManyFilter(
 	fieldEntries: FieldEntry[],
 	matchType: FilterType,
-): ListDataStoreContentFilter {
+): DataTableFilter {
 	const filters = fieldEntries.map((x) => {
 		switch (x.condition) {
 			case 'isEmpty':
@@ -97,10 +101,22 @@ export function buildGetManyFilter(
 					condition: 'neq' as const,
 					value: null,
 				};
+			case 'isTrue':
+				return {
+					columnName: x.keyName,
+					condition: 'eq' as const,
+					value: true,
+				};
+			case 'isFalse':
+				return {
+					columnName: x.keyName,
+					condition: 'eq' as const,
+					value: false,
+				};
 			default:
 				return {
 					columnName: x.keyName,
-					condition: x.condition,
+					condition: x.condition ?? 'eq',
 					value: x.keyValue,
 				};
 		}
@@ -161,4 +177,17 @@ export function dataObjectToApiInput(
 			return [k, v];
 		}),
 	);
+}
+
+export function getDryRunParameter(ctx: IExecuteFunctions, index: number): boolean {
+	const dryRun = ctx.getNodeParameter(`options.${DRY_RUN.name}`, index, false);
+
+	if (typeof dryRun !== 'boolean') {
+		throw new NodeOperationError(
+			ctx.getNode(),
+			`unexpected input ${JSON.stringify(dryRun)} for boolean dryRun`,
+		);
+	}
+
+	return dryRun;
 }

@@ -37,7 +37,6 @@ import type {
 	ITelemetryTrackProperties,
 	WorkflowSettings,
 	INodeExecutionData,
-	INodeProperties,
 	NodeConnectionType,
 	StartNodeData,
 	AnnotationVote,
@@ -189,12 +188,6 @@ export interface IAiDataContent {
 	};
 }
 
-export interface IAiData {
-	data: IAiDataContent[];
-	node: string;
-	runIndex: number;
-}
-
 export interface IStartRunData {
 	workflowData: WorkflowData;
 	startNodes?: StartNodeData[];
@@ -296,6 +289,7 @@ export type WorkflowResource = BaseResource & {
 	sharedWithProjects?: ProjectSharingData[];
 	readOnly: boolean;
 	parentFolder?: ResourceParentFolder;
+	settings?: Partial<IWorkflowSettings>;
 };
 
 export type VariableResource = BaseResource & {
@@ -344,7 +338,7 @@ export type SortingAndPaginationUpdates = {
 
 export type WorkflowListItem = Omit<
 	IWorkflowDb,
-	'nodes' | 'connections' | 'settings' | 'pinData' | 'usedCredentials' | 'meta'
+	'nodes' | 'connections' | 'pinData' | 'usedCredentials' | 'meta'
 > & {
 	resource: 'workflow';
 };
@@ -495,6 +489,7 @@ export interface IExecutionsListResponse {
 	count: number;
 	results: ExecutionSummaryWithScopes[];
 	estimated: boolean;
+	concurrentExecutionsCount: number;
 }
 
 export interface IExecutionsCurrentSummaryExtended {
@@ -568,6 +563,7 @@ export interface IWorkflowSettings extends IWorkflowSettingsWorkflow {
 	callerIds?: string;
 	callerPolicy?: WorkflowSettings.CallerPolicy;
 	executionOrder: NonNullable<IWorkflowSettingsWorkflow['executionOrder']>;
+	availableInMCP?: boolean;
 }
 
 export interface ITimeoutHMS {
@@ -768,24 +764,6 @@ export interface IUsedCredential {
 	sharedWithProjects?: ProjectSharingData[];
 }
 
-export interface WorkflowsState {
-	activeWorkflows: string[];
-	activeWorkflowExecution: ExecutionSummary | null;
-	currentWorkflowExecutions: ExecutionSummary[];
-	activeExecutionId: string | null;
-	executingNode: string[];
-	executionWaitingForWebhook: boolean;
-	nodeMetadata: NodeMetadataMap;
-	subWorkflowExecutionError: Error | null;
-	usedCredentials: Record<string, IUsedCredential>;
-	workflow: IWorkflowDb;
-	workflowExecutionData: IExecutionResponse | null;
-	workflowExecutionPairedItemMappings: { [itemId: string]: Set<string> };
-	workflowsById: IWorkflowsMap;
-	chatMessages: string[];
-	isInDebugMode?: boolean;
-}
-
 export interface NodeMetadataMap {
 	[nodeName: string]: INodeMetadata;
 }
@@ -842,48 +820,6 @@ export interface TargetItem {
 	itemIndex: number;
 	runIndex: number;
 	outputIndex: number;
-}
-
-export interface NDVState {
-	activeNodeName: string | null;
-	mainPanelDimensions: { [key: string]: { [key: string]: number } };
-	pushRef: string;
-	input: {
-		displayMode: IRunDataDisplayMode;
-		nodeName?: string;
-		run?: number;
-		branch?: number;
-		data: {
-			isEmpty: boolean;
-		};
-	};
-	output: {
-		branch?: number;
-		displayMode: IRunDataDisplayMode;
-		data: {
-			isEmpty: boolean;
-		};
-		editMode: {
-			enabled: boolean;
-			value: string;
-		};
-	};
-	focusedMappableInput: string;
-	focusedInputPath: string;
-	mappingTelemetry: { [key: string]: string | number | boolean };
-	hoveringItem: null | TargetItem;
-	expressionOutputItemIndex: number;
-	draggable: {
-		isDragging: boolean;
-		type: string;
-		data: string;
-		dimensions: DOMRect | null;
-		activeTarget: { id: string; stickyPosition: null | XYPosition } | null;
-	};
-	isMappingOnboarded: boolean;
-	isTableHoverOnboarded: boolean;
-	isAutocompleteOnboarded: boolean;
-	highlightDraggables: boolean;
 }
 
 export type TargetNodeParameterContext = {
@@ -1065,39 +1001,11 @@ export type SchemaType =
 
 export type Schema = { type: SchemaType; key?: string; value: string | Schema[]; path: string };
 
-export type UsageState = {
-	loading: boolean;
-	data: {
-		usage: {
-			activeWorkflowTriggers: {
-				limit: number; // -1 for unlimited, from license
-				value: number;
-				warningThreshold: number; // hardcoded value in BE
-			};
-			workflowsHavingEvaluations: {
-				limit: number; // -1 for unlimited, from license
-				value: number;
-			};
-		};
-		license: {
-			planId: string; // community
-			planName: string; // defaults to Community
-		};
-		managementToken?: string;
-	};
-};
-
 export type NodeAuthenticationOption = {
 	name: string;
 	value: string;
 	displayOptions?: IDisplayOptions;
 };
-
-export interface EnvironmentVariable {
-	id: string;
-	key: string;
-	value: string;
-}
 
 export type ExecutionFilterMetadata = {
 	key: string;
@@ -1140,27 +1048,6 @@ export interface CloudPlanState {
 
 export type CloudPlanAndUsageData = Cloud.PlanData & { usage: InstanceUsage };
 
-export interface ExternalSecretsProviderSecret {
-	key: string;
-}
-
-export type ExternalSecretsProviderData = Record<string, IUpdateInformation['value']>;
-
-export type ExternalSecretsProviderProperty = INodeProperties;
-
-export type ExternalSecretsProviderState = 'connected' | 'tested' | 'initializing' | 'error';
-
-export interface ExternalSecretsProvider {
-	icon: string;
-	name: string;
-	displayName: string;
-	connected: boolean;
-	connectedAt: string | false;
-	state: ExternalSecretsProviderState;
-	data?: ExternalSecretsProviderData;
-	properties?: ExternalSecretsProviderProperty[];
-}
-
 export type CloudUpdateLinkSourceType =
 	| 'advanced-permissions'
 	| 'canvas-nav'
@@ -1184,7 +1071,9 @@ export type CloudUpdateLinkSourceType =
 	| 'rbac'
 	| 'debug'
 	| 'insights'
-	| 'evaluations';
+	| 'evaluations'
+	| 'ai-builder-sidebar'
+	| 'ai-builder-canvas';
 
 export type UTMCampaign =
 	| 'upgrade-custom-data-filter'
@@ -1209,7 +1098,8 @@ export type UTMCampaign =
 	| 'upgrade-rbac'
 	| 'upgrade-debug'
 	| 'upgrade-insights'
-	| 'upgrade-evaluations';
+	| 'upgrade-evaluations'
+	| 'upgrade-builder';
 
 export type N8nBanners = {
 	[key in BannerName]: {
